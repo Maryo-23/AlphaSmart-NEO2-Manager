@@ -141,3 +141,10 @@ MIT - Share freely! Made for the AlphaSmart NEO 2 community.
 - Uses `pandoc` for document conversion
 - Uses `pandoc` for document conversion
 - Icon: `system-file-manager` (GNOME)
+
+## Mac version
+
+A macOS version (double-click `.dmg`) lives in the [`mac/`](mac/) folder.
+Download the latest `.dmg` from [Releases](../../releases) — built
+automatically in the cloud by GitHub Actions.
+See [mac/README-MAC.md](mac/README-MAC.md) for install and usage.

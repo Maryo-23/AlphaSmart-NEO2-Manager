@@ -1,0 +1,213 @@
+#!/usr/bin/env python3
+"""
+NEO 2 Plain Text Formatter - Universal edition
+
+Converts ANY document to NEO 2 friendly plain text with visible formatting
+markers: Word (.docx, .doc), LibreOffice (.odt), Markdown (.md), HTML,
+EPUB, RTF, PDF, and plain text (.txt).
+
+Uses pandoc to read the document, then applies plain-text markers for
+bold, italic, chapter headings and dialogue (the NEO 2 can't render real
+bold/italic, but the markers are visible on screen).
+
+Usage: neo-format-neo2 <input> <output.txt> [--format-style={markdown|ascii|minimal}]
+"""
+
+import sys
+import os
+import re
+import shutil
+import subprocess
+import tempfile
+
+FORMAT_STYLES = {
+    "markdown": {
+        "bold_open": "**", "bold_close": "**",
+        "italic_open": "*", "italic_close": "*",
+        "bi_open": "***", "bi_close": "***",
+        "chapter_pre": "*** ", "chapter_post": " ***",
+        "dialogue_indent": "    ",
+    },
+    "ascii": {
+        "bold_open": "__", "bold_close": "__",
+        "italic_open": "_", "italic_close": "_",
+        "bi_open": "___", "bi_close": "___",
+        "chapter_pre": "=== ", "chapter_post": " ===",
+        "dialogue_indent": "    ",
+    },
+    "minimal": {
+        "bold_open": "", "bold_close": "",
+        "italic_open": "", "italic_close": "",
+        "bi_open": "", "bi_close": "",
+        "chapter_pre": "", "chapter_post": "",
+        "dialogue_indent": "",
+    },
+}
+
+CHAPTER_RE = re.compile(r"^(Chapter\s+\d+|Prologue|Epilogue|Part\s+\d+)", re.IGNORECASE)
+DIALOGUE_RE = re.compile(r"^\s*[\"']")
+HEADING_RE = re.compile(r"^#{1,6}\s+(.*\S)\s*$")
+
+# pandoc input readers by extension (pandoc can't infer all of them)
+PANDOC_READERS = {
+    ".txt": "markdown", ".text": "markdown", ".md": "markdown", ".markdown": "markdown",
+    ".html": "html", ".htm": "html", ".docx": "docx", ".odt": "odt",
+    ".epub": "epub", ".rtf": "rtf",
+}
+# formats pandoc cannot read -> pre-convert with LibreOffice
+LIBREOFFICE_ONLY = (".doc", ".pdf")
+
+
+# pandoc location: env override (set inside the Mac .app) -> PATH -> hope
+PANDOC = os.environ.get("NEO_PANDOC") or shutil.which("pandoc") or "pandoc"
+
+
+def run_pandoc(input_path):
+    """Convert a document to markdown text via pandoc."""
+    ext = os.path.splitext(input_path)[1].lower()
+    cmd = [PANDOC]
+    if ext in PANDOC_READERS:
+        cmd += ["-f", PANDOC_READERS[ext]]
+    cmd += [input_path, "-t", "markdown", "--wrap=none"]
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr.strip() or "pandoc failed")
+    return result.stdout
+
+
+def convert_with_libreoffice(input_path):
+    """Fallback for formats pandoc cannot read (.doc, .pdf)."""
+    tmp_dir = tempfile.mkdtemp(prefix="neo_fmt_")
+    subprocess.run(
+        ["soffice", "--headless", "--convert-to", "odt", "--outdir", tmp_dir, input_path],
+        capture_output=True, text=True, timeout=180,
+    )
+    odt_path = os.path.join(
+        tmp_dir, os.path.splitext(os.path.basename(input_path))[0] + ".odt"
+    )
+    if not os.path.exists(odt_path):
+        raise RuntimeError("LibreOffice conversion failed")
+    return run_pandoc(odt_path)
+
+
+def to_markdown(input_path):
+    """Get document content as markdown, whatever the source format."""
+    ext = os.path.splitext(input_path)[1].lower()
+    if ext in LIBREOFFICE_ONLY:
+        return convert_with_libreoffice(input_path)
+    try:
+        return run_pandoc(input_path)
+    except Exception:
+        return convert_with_libreoffice(input_path)
+
+
+# --- marker helpers -------------------------------------------------------
+
+_ESCAPES = {"*": "\x00AST\x00", "_": "\x00UND\x00"}
+
+
+def protect_escapes(text):
+    """Hide pandoc-escaped literals (\\*, \\_) so they aren't seen as markers."""
+    return re.sub(r"\\([*_])", lambda m: _ESCAPES[m.group(1)], text)
+
+
+def restore_escapes(text):
+    for char, placeholder in _ESCAPES.items():
+        text = text.replace(placeholder, char)
+    return text
+
+
+def convert_emphasis(text, fmt):
+    """Convert pandoc **bold** / *italic***/***both*** to the target style."""
+    if fmt is FORMAT_STYLES["markdown"]:
+        return text  # pandoc already emits markdown markers
+    # bold+italic first, then bold, then italic
+    text = re.sub(r"\*\*\*(\S(?:.*?\S)?)\*\*\*",
+                  lambda m: fmt["bi_open"] + m.group(1) + fmt["bi_close"], text, flags=re.S)
+    text = re.sub(r"\*\*(\S(?:[^*]*?\S)?)\*\*",
+                  lambda m: fmt["bold_open"] + m.group(1) + fmt["bold_close"], text)
+    text = re.sub(r"\*(\S(?:[^*\n]*?\S)?)\*",
+                  lambda m: fmt["italic_open"] + m.group(1) + fmt["italic_close"], text)
+    return text
+
+
+def convert_headings(text, fmt):
+    """Turn # headings and 'Chapter N' style lines into marked chapter titles."""
+    out = []
+    for line in text.split("\n"):
+        heading = HEADING_RE.match(line)
+        if heading:
+            out.append(fmt["chapter_pre"] + heading.group(1).strip() + fmt["chapter_post"])
+        elif CHAPTER_RE.match(line.strip()):
+            out.append(fmt["chapter_pre"] + line.strip() + fmt["chapter_post"])
+        else:
+            out.append(line)
+    return "\n".join(out)
+
+
+def convert_dialogue(text, fmt):
+    """Indent paragraphs that start with a quote (except in minimal mode)."""
+    if not fmt["dialogue_indent"]:
+        return text
+    paragraphs = text.split("\n\n")
+    return "\n\n".join(
+        fmt["dialogue_indent"] + p if DIALOGUE_RE.match(p) else p
+        for p in paragraphs
+    )
+
+
+def tidy(text):
+    text = re.sub(r"[ \t]+\n", "\n", text)     # trailing spaces
+    text = re.sub(r"\n{3,}", "\n\n", text)     # max one blank line
+    return text.strip() + "\n"
+
+
+def convert(input_path, output_path, format_style="markdown"):
+    if format_style not in FORMAT_STYLES:
+        raise SystemExit(
+            f"Unknown format style: {format_style}\n"
+            f"Available: {', '.join(FORMAT_STYLES)}"
+        )
+    fmt = FORMAT_STYLES[format_style]
+
+    text = to_markdown(input_path)
+    text = re.sub(r"\[\]\{[^}]*\}", "", text)  # pandoc empty anchor spans
+    text = protect_escapes(text)
+    text = convert_emphasis(text, fmt)
+    text = convert_headings(text, fmt)
+    text = convert_dialogue(text, fmt)
+    text = restore_escapes(text)
+    text = tidy(text)
+
+    with open(output_path, "w", encoding="utf-8") as f:
+        f.write(text)
+
+    print(f"Formatted text saved to: {output_path}")
+    print(f"Style: {format_style}")
+    return output_path
+
+
+def main():
+    if len(sys.argv) < 3:
+        print("Usage: neo-format-neo2 <input> <output.txt> [--format-style={markdown|ascii|minimal}]")
+        print("")
+        print("Input can be: .docx .doc .odt .md .html .epub .rtf .pdf .txt")
+        print("")
+        print("Format styles:")
+        print("  markdown - Uses **bold**, *italic*, ***CHAPTER***")
+        print("  ascii    - Uses __bold__, _italic_, ===CHAPTER===")
+        print("  minimal  - Just plain text (no markers)")
+        sys.exit(1)
+
+    input_path = sys.argv[1]
+    output_path = sys.argv[2]
+    format_style = "markdown"
+    for arg in sys.argv[3:]:
+        if arg.startswith("--format-style="):
+            format_style = arg.split("=", 1)[1]
+
+    convert(input_path, output_path, format_style)
+
+
+if __name__ == "__main__":
+    main()
