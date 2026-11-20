@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=NEO Sender
+Comment=Send and manage files on your AlphaSmart NEO 2
+Exec=/home/maryo23/.local/bin/neo-sender-gui
+Type=Application
+Terminal=false
+Icon=system-file-manager
+Categories=Office;
+StartupNotify=true

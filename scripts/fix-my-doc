@@ -1,0 +1,79 @@
+#!/bin/bash
+# ONE-CLICK: Fix Grammar + Format Like a Book + Open in LibreOffice
+
+LOG="/tmp/neo_1click_fix.log"
+(
+export PATH="$HOME/.local/bin:$HOME/.local/neotools-venv/bin:/usr/bin:$PATH"
+export DISPLAY=":0"
+[ -f "$HOME/.Xauthority" ] && export XAUTHORITY="$HOME/.Xauthority"
+
+echo "=== Starting Fix My Doc === $(date)" >> "$LOG" 2>&1
+
+# Step 1: Let user pick the .odt file
+TARGET_FILE=$(zenity --file-selection --title="Pick an ODT file to fix" --file-filter="ODT Documents | *.odt" --filename="$HOME/Documents/" 2>/dev/null)
+[ -z "$TARGET_FILE" ] && exit 0
+
+BASENAME=$(basename "$TARGET_FILE")
+DIRNAME=$(dirname "$TARGET_FILE")
+NAME_NO_EXT="${BASENAME%.*}"
+TMP_DIR="/tmp/neo_1click_$$"
+mkdir -p "$TMP_DIR"
+
+echo "Processing: $BASENAME" >> "$LOG" 2>&1
+notify-send "Book Formatter" "Working on: $BASENAME" --icon=tools-check-spelling 2>/dev/null || true
+
+# Convert ODT → TXT
+libreoffice --headless --convert-to "txt:Text (encoded):UTF8" "$TARGET_FILE" --outdir "$TMP_DIR" >> "$LOG" 2>&1
+TXT_FILE="$TMP_DIR/${NAME_NO_EXT}.txt"
+
+if [ ! -f "$TXT_FILE" ]; then
+    echo "ERROR: Could not convert to text" >> "$LOG" 2>&1
+    zenity --error --text="Could not read the document.\nPlease save it first." --title="Error" 2>/dev/null || true
+    rm -rf "$TMP_DIR"
+    exit 1
+fi
+
+# Fix grammar
+CORRECTED="$TMP_DIR/corrected.txt"
+if ~/.local/bin/neo-correct-grammar "$TXT_FILE" > "$CORRECTED" 2>>"$LOG"; then
+    echo "Grammar correction done" >> "$LOG" 2>&1
+else
+    echo "Grammar correction failed, using original" >> "$LOG" 2>&1
+    cp "$TXT_FILE" "$CORRECTED"
+fi
+
+# Format as a book
+FORMATTED_ODT="$TMP_DIR/formatted.odt"
+echo "Running book formatter..." >> "$LOG" 2>&1
+if ~/.local/neotools-venv/bin/python ~/.local/bin/neo-format-book "$CORRECTED" "$FORMATTED_ODT" >> "$LOG" 2>&1; then
+    echo "Book formatting done" >> "$LOG" 2>&1
+else
+    echo "Book formatting failed, falling back to plain ODT" >> "$LOG" 2>&1
+    libreoffice --headless --convert-to odt:"writer8" "$CORRECTED" --outdir "$TMP_DIR" >> "$LOG" 2>&1
+    FORMATTED_ODT="$TMP_DIR/corrected.odt"
+fi
+
+# Move final file to Documents
+OUTPUT="$DIRNAME/${NAME_NO_EXT} - Formatted.odt"
+if [ -f "$FORMATTED_ODT" ]; then
+    mv "$FORMATTED_ODT" "$OUTPUT"
+    echo "Saved to: $OUTPUT" >> "$LOG" 2>&1
+else
+    echo "ERROR: No output file created" >> "$LOG" 2>&1
+    rm -rf "$TMP_DIR"
+    exit 1
+fi
+
+rm -rf "$TMP_DIR"
+
+# Open the formatted file
+if [ -f "$OUTPUT" ]; then
+    echo "Opening: $OUTPUT" >> "$LOG" 2>&1
+    libreoffice --writer "$OUTPUT" >> "$LOG" 2>&1 &
+    notify-send "✅ Done!" "Grammar fixed & book-formatted:\n${NAME_NO_EXT} - Formatted.odt" --icon=tools-check-spelling 2>/dev/null || true
+else
+    echo "ERROR: Output file not found" >> "$LOG" 2>&1
+fi
+
+echo "=== Finished === $(date)" >> "$LOG" 2>&1
+) &

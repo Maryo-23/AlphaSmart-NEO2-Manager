@@ -1,0 +1,251 @@
+#!/usr/bin/env python3
+"""
+NEO 2 Book Formatter - Preserves paragraphs, detects chapters, formats as book
+"""
+
+import sys
+import re
+from odf.opendocument import OpenDocumentText
+from odf.style import Style, MasterPage, PageLayout, PageLayoutProperties, ParagraphProperties, TextProperties
+from odf.text import P
+
+def create_styles(doc):
+    pagelayout = PageLayout(name="BookLayout")
+    plp = PageLayoutProperties(
+        marginleft="1.5in", marginright="1.25in",
+        margintop="1in", marginbottom="1in",
+        pagewidth="6in", pageheight="9in"
+    )
+    pagelayout.addElement(plp)
+    doc.automaticstyles.addElement(pagelayout)
+    
+    masterpage = MasterPage(name="BookMaster", pagelayoutname="BookLayout")
+    doc.masterstyles.addElement(masterpage)
+    
+    chapter = Style(name="ChapterTitle", family="paragraph")
+    chapter.addElement(ParagraphProperties(
+        textalign="center", marginbottom="0.5in", margintop="2in", breakbefore="page"
+    ))
+    chapter.addElement(TextProperties(
+        fontsize="24pt", fontweight="bold", fontfamily="Times New Roman"
+    ))
+    doc.styles.addElement(chapter)
+    
+    body = Style(name="BookBody", family="paragraph")
+    body.addElement(ParagraphProperties(
+        textalign="justify", textindent="0.5in", marginbottom="0.15in"
+    ))
+    body.addElement(TextProperties(fontsize="12pt", fontfamily="Times New Roman"))
+    doc.styles.addElement(body)
+    
+    first = Style(name="BookFirst", family="paragraph", parentstylename="BookBody")
+    first.addElement(ParagraphProperties(textindent="0in"))
+    doc.styles.addElement(first)
+    
+    dialogue = Style(name="BookDialogue", family="paragraph", parentstylename="BookBody")
+    dialogue.addElement(ParagraphProperties(
+        textindent="0in", marginleft="0.25in", marginright="0.25in"
+    ))
+    doc.styles.addElement(dialogue)
+    
+    return {"chapter": chapter, "body": body, "first": first, "dialogue": dialogue}
+
+def is_chapter(text):
+    return bool(re.match(r'^(Chapter\s+\d+|CHAPTER\s+\d+|Prologue|Epilogue|Part\s+\d+)', text.strip(), re.IGNORECASE))
+
+def is_dialogue(text):
+    t = text.strip()
+    if t.startswith('"') or t.startswith("'"):
+        return True
+    if '"' in t and len(t) < 120:
+        return True
+    return False
+
+def fix_spacing(text):
+    """Fix spacing within text."""
+    text = re.sub(r'\s+', ' ', text).strip()
+    
+    # Ensure space after period/question/exclamation followed by capital
+    text = re.sub(r'\.([A-Z])', r'. \1', text)
+    text = re.sub(r'\?([A-Z])', r'? \1', text)
+    text = re.sub(r'!([A-Z])', r'! \1', text)
+    
+    # Fix: word."Word -> word. "Word (period, quote, capital)
+    text = re.sub(r'([a-zA-Z])\."([A-Z])', r'\1. "\2', text)
+    # Fix: word?"Word -> word? "Word
+    text = re.sub(r'([a-zA-Z])\?"([A-Z])', r'\1? "\2', text)
+    # Fix: word!"Word -> word! "Word
+    text = re.sub(r'([a-zA-Z])!"([A-Z])', r'\1! "\2', text)
+    # Fix: word,"Word -> word, "Word
+    text = re.sub(r'([a-zA-Z]),"([A-Z])', r'\1, "\2', text)
+    # Fix: word"Word -> word "Word (lowercase word ending in quote, then capital)
+    text = re.sub(r'([a-z])"([A-Z])', r'\1" \2', text)
+    
+    # Remove space BEFORE punctuation
+    text = re.sub(r' ([.,;:!?])', r'\1', text)
+    # Remove space after opening quote (" Word -> "Word)
+    # But careful not to remove spaces we just added after closing quotes
+    # Use a temporary marker for closing quotes
+    text = text.replace('" ', '<<CLOSE_QUOTE>> ')
+    text = re.sub(r'" ([a-zA-Z])', r'"\1', text)  # opening quote: " Word -> "Word
+    text = text.replace('<<CLOSE_QUOTE>>', '"')
+    
+    text = re.sub(r'  +', ' ', text)
+    return text
+
+def split_sentences(text):
+    """Split a long block of text into sentences/paragraphs.
+    Detects sentence boundaries: . ? ! followed by space and capital letter or quote.
+    Also splits on dialogue tags (said, asked, replied, etc.) when followed by a capital.
+    """
+    # Protect abbreviations we don't want to split on
+    protected = [
+        r'Mr\.', r'Mrs\.', r'Ms\.', r'Dr\.', r'Prof\.', r'Jr\.', r'Sr\.', r'Jr\.',
+        r'etc\.', r'vs\.', r'e\.g\.', r'i\.e\.', r'Inc\.', r'Ltd\.', r'Co\.'
+    ]
+    temp_text = text
+    placeholders = {}
+    placeholder_id = 0
+    for abbrev in protected:
+        for match in re.finditer(abbrev, temp_text):
+            placeholder = f"<<ABBR_{placeholder_id}>>"
+            placeholders[placeholder] = match.group(0)
+            temp_text = temp_text[:match.start()] + placeholder + temp_text[match.end():]
+            placeholder_id += 1
+
+    # Pass 1: Split on sentence-ending punctuation + space + capital or quote
+    # Pattern: [.!?] followed by optional quote, then space, then capital or quote
+    pattern1 = r'(?<=[.!?])"?\s+(?=[A-Z"])'
+    parts = re.split(pattern1, temp_text)
+
+    # Pass 2: For remaining long chunks, split on dialogue tags
+    dialogue_tags = r'\b(?:said|asked|replied|answered|retorted|exclaimed|shouted|whispered|muttered|stammered|remarked|stated|called out|wondered|thought|explained|warned|implored|queried|vocalised|murmured|caterwauled|lectured)\b'
+    result = []
+    for part in parts:
+        part = part.strip()
+        if len(part) > 200:
+            # Split on dialogue tag + space + capital letter (but not at the start)
+            sub_parts = re.split(r'(?<=.{' + str(max(1, len(part)//4)) + r'})' + dialogue_tags + r'\s+(?=[A-Z])', part)
+            # Actually, simpler: just split on dialogue tag boundaries
+            sub_parts = re.split(r'(?<=[a-z.,!?"])\s+(?:' + dialogue_tags + r')\s+(?=[A-Z"])', part)
+            for sp in sub_parts:
+                sp = sp.strip()
+                if sp:
+                    result.append(sp)
+        else:
+            if part:
+                result.append(part)
+
+    # Restore abbreviations
+    final = []
+    for part in result:
+        for placeholder, abbrev in placeholders.items():
+            part = part.replace(placeholder, abbrev)
+        final.append(part.strip())
+
+    return [p for p in final if p]
+
+
+def split_paragraphs(text):
+    """Split text into paragraphs. Treats each non-empty line as a paragraph,
+    respecting the user's single-newline paragraph breaks from the NEO 2.
+    Long lines (>250 chars) are further split by sentence boundaries."""
+    # Strip BOM and zero-width characters
+    text = text.lstrip('\ufeff')
+    # First, extract chapter headings
+    chapters = []
+    def chapter_replacer(match):
+        chapters.append(match.group(1))
+        return f"\n<<CHAPTER_{len(chapters)-1}>>\n"
+
+    text = re.sub(r'\b(Chapter\s+\d+|CHAPTER\s+\d+|Prologue|Epilogue|Part\s+\d+)\b',
+                  chapter_replacer, text, flags=re.IGNORECASE)
+
+    # Split by single newlines — each line the user typed is a paragraph
+    lines = text.split('\n')
+
+    paragraphs = []
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        # Skip invisible-only
+        if not line.strip('\ufeff\u200b\u200c\u200d'):
+            continue
+
+        # Check for chapter markers
+        if '<<CHAPTER_' in line:
+            markers = re.findall(r'<<CHAPTER_(\d+)>>', line)
+            for marker in markers:
+                idx = int(marker)
+                if idx < len(chapters):
+                    paragraphs.append(("chapter", chapters[idx]))
+            line = re.sub(r'<<CHAPTER_\d+>>', '', line).strip()
+            if not line:
+                continue
+
+        # Fix spacing
+        line = fix_spacing(line)
+        if not line:
+            continue
+
+        # If line is very long, split by sentence boundaries
+        if len(line) > 250:
+            sentences = split_sentences(line)
+            for sent in sentences:
+                if is_chapter(sent):
+                    paragraphs.append(("chapter", sent))
+                elif is_dialogue(sent):
+                    paragraphs.append(("dialogue", sent))
+                else:
+                    paragraphs.append(("body", sent))
+        else:
+            if is_chapter(line):
+                paragraphs.append(("chapter", line))
+            elif is_dialogue(line):
+                paragraphs.append(("dialogue", line))
+            else:
+                paragraphs.append(("body", line))
+
+    return paragraphs
+
+def format_book(input_path, output_path):
+    with open(input_path, "r", encoding="utf-8") as f:
+        text = f.read()
+    
+    paragraphs = split_paragraphs(text)
+    
+    doc = OpenDocumentText()
+    styles = create_styles(doc)
+    
+    first_after_chapter = True
+    
+    for ptype, ptext in paragraphs:
+        if ptype == "chapter":
+            p = P(text=ptext, stylename=styles["chapter"])
+            doc.text.addElement(p)
+            first_after_chapter = True
+        elif ptype == "dialogue":
+            p = P(text=ptext, stylename=styles["dialogue"])
+            doc.text.addElement(p)
+            first_after_chapter = False
+        else:
+            if first_after_chapter:
+                p = P(text=ptext, stylename=styles["first"])
+                first_after_chapter = False
+            else:
+                p = P(text=ptext, stylename=styles["body"])
+            doc.text.addElement(p)
+    
+    doc.save(output_path)
+    print(f"Book formatted: {output_path}")
+    return output_path
+
+def main():
+    if len(sys.argv) < 3:
+        print("Usage: neo-format-book <input.txt> <output.odt>", file=sys.stderr)
+        sys.exit(1)
+    format_book(sys.argv[1], sys.argv[2])
+
+if __name__ == "__main__":
+    main()

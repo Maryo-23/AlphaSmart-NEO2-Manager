@@ -1,0 +1,64 @@
+#!/bin/bash
+# Send text file to AlphaSmart NEO 2 via USB
+
+export PATH="$HOME/.local/bin:$HOME/.local/neotools-venv/bin:/usr/bin:$PATH"
+NEOTOOLS="$(command -v neotools || echo "$HOME/.local/neotools-venv/bin/neotools")"
+export DISPLAY=":0"
+[ -f "$HOME/.Xauthority" ] && export XAUTHORITY="$HOME/.Xauthority"
+
+LOG="/tmp/neo_send.log"
+
+echo "=== Send to NEO === $(date)" >> "$LOG"
+
+# Check NEO is connected
+if ! "$NEOTOOLS" info >> "$LOG" 2>&1; then
+    zenity --error --text="AlphaSmart NEO not found.\nPlease connect it with USB and try again." --title="NEO Not Connected" 2>/dev/null || true
+    echo "NEO not connected" >> "$LOG"
+    exit 1
+fi
+
+echo "NEO detected" >> "$LOG"
+
+# Pick file to send
+FILE=$(zenity --file-selection --title="Pick a text file to send to NEO" --file-filter="Text files | *.txt" --filename="$HOME/Documents/" 2>/dev/null)
+[ -z "$FILE" ] && exit 0
+
+BASENAME=$(basename "$FILE")
+
+echo "File: $FILE" >> "$LOG"
+
+# Check if it's a text file
+if [[ ! "$FILE" =~ \.txt$ ]]; then
+    # Convert to txt first
+    TMP_DIR="/tmp/neo_send_$$"
+    mkdir -p "$TMP_DIR"
+    libreoffice --headless --convert-to "txt:Text (encoded):UTF8" "$FILE" --outdir "$TMP_DIR" >> "$LOG" 2>&1
+    CONVERTED="$TMP_DIR/$(basename "${FILE%.*}").txt"
+    if [ -f "$CONVERTED" ]; then
+        FILE="$CONVERTED"
+    else
+        zenity --error --text="Could not convert file to text." --title="Error" 2>/dev/null || true
+        rm -rf "$TMP_DIR"
+        exit 1
+    fi
+fi
+
+# Ask which slot (or show current slots)
+SLOT=$(zenity --entry --title="NEO File Slot" --text="Which NEO slot to send to? (1-8 or a name):" --entry-text="1" 2>/dev/null)
+[ -z "$SLOT" ] && exit 0
+
+echo "Sending to slot: $SLOT" >> "$LOG"
+
+# Send to NEO
+if "$NEOTOOLS" files write "$FILE" "$SLOT" >> "$LOG" 2>&1; then
+    zenity --info --text="✅ Sent successfully!\n\n$BASENAME\n→ NEO slot: $SLOT" --title="Sent to NEO" 2>/dev/null || true
+    echo "Success" >> "$LOG"
+else
+    zenity --error --text="Failed to send file.\nCheck the NEO connection and try again." --title="Send Failed" 2>/dev/null || true
+    echo "Failed" >> "$LOG"
+fi
+
+# Cleanup
+rm -rf "$TMP_DIR" 2>/dev/null
+
+echo "=== Done ===" >> "$LOG"

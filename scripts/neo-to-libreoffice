@@ -1,0 +1,136 @@
+#!/bin/bash
+# NEO 2 to LibreOffice Direct Paste Script
+# Reads NEO 2 files and pastes them directly into the active LibreOffice window
+
+NEO_PATH="$HOME/.local/bin"
+TMP_DIR="/tmp/neo_import_$$"
+LOG="/tmp/neo_to_lo.log"
+
+exec > "$LOG" 2>&1
+set -x
+
+# Ensure neotools and java are in PATH
+export PATH="$HOME/.local/bin:$HOME/.local/neotools-venv/bin:/usr/bin:$PATH"
+export JAVA_HOME="/usr/lib/jvm/java-17-openjdk-amd64"
+[ -d "$JAVA_HOME" ] || JAVA_HOME=""
+
+# Detect X authority for root/udev execution
+if [ -z "$XAUTHORITY" ]; then
+    [ -f "$HOME/.Xauthority" ] && export XAUTHORITY="$HOME/.Xauthority"
+fi
+if [ -z "$DISPLAY" ]; then
+    export DISPLAY=":0"
+fi
+
+# Check if NEO 2 is connected
+if ! lsusb | grep -qi "AlphaSmart"; then
+    zenity --error --text="AlphaSmart NEO 2 not detected.\nPlease plug it in and try again." --title="NEO Import" 2>/dev/null || \
+    notify-send "NEO Import" "NEO 2 not detected. Please plug it in."
+    exit 1
+fi
+
+# Create directories
+mkdir -p "$TMP_DIR"
+mkdir -p ~/Desktop/NEO_Files
+
+# Read ALL files from NEO 2 at once (avoids USB reconnect issues)
+echo "Reading files from NEO 2..."
+neotools files read-all --path ~/Desktop/NEO_Files 2>&1
+READ_STATUS=$?
+
+if [ $READ_STATUS -ne 0 ]; then
+    zenity --error --text="Could not read from NEO 2.\nTry unplugging and plugging it back in." --title="NEO Import" 2>/dev/null || \
+    notify-send "NEO Import" "Could not read from NEO 2"
+    rm -rf "$TMP_DIR"
+    exit 1
+fi
+
+# Find the largest file (the main document)
+MAIN_FILE=""
+MAIN_SIZE=0
+for f in ~/Desktop/NEO_Files/*.txt; do
+    [ -f "$f" ] || continue
+    SIZE=$(stat -c%s "$f" 2>/dev/null || stat -f%z "$f" 2>/dev/null)
+    if [ "$SIZE" -gt "$MAIN_SIZE" ]; then
+        MAIN_SIZE="$SIZE"
+        MAIN_FILE="$f"
+    fi
+done
+
+if [ -z "$MAIN_FILE" ] || [ "$MAIN_SIZE" -lt 10 ]; then
+    zenity --error --text="No files with content found on NEO 2." --title="NEO Import" 2>/dev/null || \
+    notify-send "NEO Import" "No files found on NEO 2"
+    rm -rf "$TMP_DIR"
+    exit 1
+fi
+
+echo "Main file: $MAIN_FILE ($MAIN_SIZE bytes)"
+
+# Run grammar and punctuation correction
+echo "Running grammar correction..."
+CORRECTED_FILE="$TMP_DIR/corrected.txt"
+if ~/.local/bin/neo-correct-grammar "$MAIN_FILE" > "$CORRECTED_FILE" 2>/dev/null; then
+    CORRECTED_SIZE=$(stat -c%s "$CORRECTED_FILE" 2>/dev/null || stat -f%z "$CORRECTED_FILE" 2>/dev/null)
+    if [ "$CORRECTED_SIZE" -gt 10 ]; then
+        MAIN_FILE="$CORRECTED_FILE"
+        echo "Grammar correction applied"
+    else
+        echo "Grammar correction produced empty output, using original"
+    fi
+else
+    echo "Grammar correction failed, using original file"
+fi
+
+# Check if LibreOffice is running
+LO_RUNNING=$(pgrep -c "soffice.bin" 2>/dev/null || echo "0")
+
+if [ "$LO_RUNNING" -eq 0 ]; then
+    # LibreOffice not running - open file the old way
+    libreoffice --writer "$MAIN_FILE" &
+    zenity --info --text="NEO 2 file imported and opened in LibreOffice Writer!\n\nAll files saved to: Desktop/NEO_Files/" --title="NEO Import" 2>/dev/null || \
+    notify-send "NEO Import" "File opened in LibreOffice Writer. Also saved to Desktop/NEO_Files/"
+    rm -rf "$TMP_DIR"
+    exit 0
+fi
+
+# LibreOffice is running - paste directly!
+echo "LibreOffice detected. Preparing to paste..."
+
+# Save current clipboard (best effort)
+OLD_CLIP="$TMP_DIR/old_clipboard.txt"
+xclip -selection clipboard -o > "$OLD_CLIP" 2>/dev/null || true
+
+# Put NEO content in clipboard
+xclip -selection clipboard < "$MAIN_FILE"
+echo "Clipboard loaded with NEO content"
+
+# Find and activate LibreOffice window
+LO_WINDOW=$(xdotool search --onlyvisible --class "soffice" | head -1)
+if [ -z "$LO_WINDOW" ]; then
+    # Window might be minimized, try without --onlyvisible
+    LO_WINDOW=$(xdotool search --class "soffice" | head -1)
+fi
+
+if [ -n "$LO_WINDOW" ]; then
+    # Activate the window
+    xdotool windowactivate "$LO_WINDOW"
+    sleep 0.3
+    # Paste at cursor position
+    xdotool key ctrl+v
+    sleep 0.2
+    
+    # Restore old clipboard after a delay (background)
+    (sleep 30 && [ -f "$OLD_CLIP" ] && cat "$OLD_CLIP" 2>/dev/null | xclip -selection clipboard 2>/dev/null) &
+    
+    BASENAME=$(basename "$MAIN_FILE")
+    zenity --info --text="✅ '$BASENAME' pasted into LibreOffice Writer!\n\nAll files also saved to: Desktop/NEO_Files/" --title="NEO Import Success" 2>/dev/null || \
+    notify-send "NEO Import" "'$BASENAME' pasted into LibreOffice Writer!" --icon=document-send
+else
+    # Could not find window, fall back to opening file
+    libreoffice --writer "$MAIN_FILE" &
+    zenity --info --text="NEO 2 file opened in LibreOffice Writer.\n(Could not find existing window to paste into.)\n\nAll files saved to: Desktop/NEO_Files/" --title="NEO Import" 2>/dev/null || \
+    notify-send "NEO Import" "File opened in LibreOffice Writer"
+fi
+
+# Cleanup temp
+rm -rf "$TMP_DIR"

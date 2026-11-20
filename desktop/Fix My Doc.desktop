@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=Fix My Doc
+Comment=Fix grammar & punctuation in your LibreOffice document
+Exec=/home/maryo23/.local/bin/fix-my-doc
+Type=Application
+Terminal=false
+Icon=tools-check-spelling
+Categories=Office;
+StartupNotify=true

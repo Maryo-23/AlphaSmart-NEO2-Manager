@@ -1,0 +1,406 @@
+#!/usr/bin/env python3
+"""
+Comprehensive Grammar & Spelling Corrector for NEO 2 text
+"""
+
+import sys
+import re
+
+def fix_text(text):
+    paragraphs = text.split('\n')
+    fixed_paras = []
+    
+    for para in paragraphs:
+        # === BROKEN CONTRACTIONS: word' space letter -> word'letter ===
+        para = re.sub(r"([a-zA-Z]+)'\s+t\b", r"\1n't", para)
+        para = re.sub(r"([a-zA-Z]+)'\s+s\b", r"\1's", para)
+        para = re.sub(r"([a-zA-Z]+)'\s+m\b", r"\1'm", para)
+        para = re.sub(r"([a-zA-Z]+)'\s+re\b", r"\1're", para)
+        para = re.sub(r"([a-zA-Z]+)'\s+ll\b", r"\1'll", para)
+        para = re.sub(r"([a-zA-Z]+)'\s+ve\b", r"\1've", para)
+        para = re.sub(r"([a-zA-Z]+)'\s+d\b", r"\1'd", para)
+        
+        # === MISSING APOSTROPHE CONTRACTIONS ===
+        para = re.sub(r'\bdont\b', "don't", para, flags=re.I)
+        para = re.sub(r'\bdoesnt\b', "doesn't", para, flags=re.I)
+        para = re.sub(r'\bdidnt\b', "didn't", para, flags=re.I)
+        para = re.sub(r'\bwasnt\b', "wasn't", para, flags=re.I)
+        para = re.sub(r'\bwerent\b', "weren't", para, flags=re.I)
+        para = re.sub(r'\bisnt\b', "isn't", para, flags=re.I)
+        para = re.sub(r'\barent\b', "aren't", para, flags=re.I)
+        para = re.sub(r'\bhasnt\b', "hasn't", para, flags=re.I)
+        para = re.sub(r'\bhavent\b', "haven't", para, flags=re.I)
+        para = re.sub(r'\bhadnt\b', "hadn't", para, flags=re.I)
+        para = re.sub(r'\bwont\b', "won't", para, flags=re.I)
+        para = re.sub(r'\bwouldnt\b', "wouldn't", para, flags=re.I)
+        para = re.sub(r'\bcouldnt\b', "couldn't", para, flags=re.I)
+        para = re.sub(r'\bshouldnt\b', "shouldn't", para, flags=re.I)
+        para = re.sub(r'\bmightnt\b', "mightn't", para, flags=re.I)
+        para = re.sub(r'\bcant\b', "can't", para, flags=re.I)
+        para = re.sub(r'\bcannot\b', "can't", para, flags=re.I)
+        para = re.sub(r'\bIm\b', "I'm", para)
+        para = re.sub(r'\bIve\b', "I've", para)
+        para = re.sub(r'\bIll\b(?!\w)', "I'll", para)
+        para = re.sub(r'\bId\b(?!\w)', "I'd", para)
+        para = re.sub(r'\bits\b(?=\s+(?:a\b|the\b|not\b|been\b|just\b|all\b|only\b|really\b|actually\b|probably\b|certainly\b|definitely\b|about\b|time\b|way\b|been\b|going\b|coming\b|looking\b|thinking\b|wondering\b|trying\b|working\b|kidding\b|too\b|very\b|quite\b|fairly\b|pretty\b|rather\b|somewhat\b|kind\s+of\b|sort\s+of\b))', "it's", para)
+        para = re.sub(r'\btheres\b', "there's", para, flags=re.I)
+        para = re.sub(r'\bheres\b', "here's", para, flags=re.I)
+        para = re.sub(r'\bwheres\b', "where's", para, flags=re.I)
+        para = re.sub(r'\bwhats\b', "what's", para, flags=re.I)
+        para = re.sub(r'\bhows\b', "how's", para, flags=re.I)
+        para = re.sub(r'\bthats\b', "that's", para, flags=re.I)
+        para = re.sub(r'\bhes\b', "he's", para, flags=re.I)
+        para = re.sub(r'\bshes\b', "she's", para, flags=re.I)
+        para = re.sub(r'\blets\b', "let's", para, flags=re.I)
+        para = re.sub(r'\byoure\b', "you're", para, flags=re.I)
+        para = re.sub(r'\btheyre\b', "they're", para, flags=re.I)
+        para = re.sub(r'\bwere\b(?=\s+(?:not\b|all\b|just\b|only\b|here\b|there\b|now\b|then\b|today\b|tomorrow\b|going\b|coming\b|looking\b|thinking\b|wondering\b|trying\b|working\b|kidding\b|ready\b|sure\b|late\b|early\b|done\b|going\b|right\b|wrong\b|crazy\b|mad\b|angry\b|happy\b|sad\b|tired\b|busy\b|done\b|going\b|coming\b|leaving\b|staying\b|waiting\b|looking\b|talking\b|listening\b|thinking\b|wondering\b|trying\b|working\b))', "we're", para)
+        
+        # === HOMOPHONES ===
+        para = re.sub(r'\byour\s+(a\b|the\b|my\b|right\b|wrong\b|not\b|sure\b|ready\b|crazy\b|going\b|coming\b|looking\b|thinking\b|wondering\b|trying\b|working\b|kidding\b|late\b|early\b|done\b|here\b|there\b|now\b|then\b|today\b|tomorrow\b|yesterday\b|finally\b|suddenly\b|probably\b|certainly\b|definitely\b|maybe\b|perhaps\b|well\b|about\b|actually\b|really\b|very\b|just\b|only\b|already\b|still\b|always\b|never\b)', r"you're \1", para, flags=re.I)
+        para = re.sub(r'\bits\s+(a\b|the\b|not\b|sure\b|right\b|wrong\b|been\b|time\b|way\b|all\b|best\b|worst\b|most\b|own\b|fault\b|job\b|turn\b|place\b|problem\b|solution\b|idea\b|thought\b|decision\b|choice\b|responsibility\b|task\b|goal\b|purpose\b|reason\b|cause\b|effect\b|result\b|beginning\b|end\b|middle\b)', r"it's \1", para, flags=re.I)
+        
+        # === MORE MISSPELLINGS (observed in output) ===
+        para = re.sub(r'\bsybol\b', "symbol", para, flags=re.I)
+        para = re.sub(r'\btought\b', "thought", para, flags=re.I)
+        para = re.sub(r'\bcunfused\b', "confused", para, flags=re.I)
+        para = re.sub(r'\bfild\b', "field", para, flags=re.I)
+        para = re.sub(r'\bwormth\b', "warmth", para, flags=re.I)
+        para = re.sub(r'\bvisable\b', "visible", para, flags=re.I)
+        para = re.sub(r'\bwile\b', "while", para, flags=re.I)
+        para = re.sub(r'\bypu\b', "you", para, flags=re.I)
+        para = re.sub(r'\bGerals\b', "Gerald's", para)
+        para = re.sub(r'\bthay\b', "they", para, flags=re.I)
+        para = re.sub(r'\bconserned\b', "concerned", para, flags=re.I)
+        para = re.sub(r'\bTwmpus\b', "Tempus", para)
+        para = re.sub(r'\bwhent\b', "went", para, flags=re.I)
+        para = re.sub(r'\bpreform\b', "perform", para, flags=re.I)
+        para = re.sub(r'\bextremly\b', "extremely", para, flags=re.I)
+        para = re.sub(r'\bdecads\b', "decades", para, flags=re.I)
+        para = re.sub(r'\bmatterd\b', "mattered", para, flags=re.I)
+        para = re.sub(r'\bchecken\b', "chicken", para, flags=re.I)
+        para = re.sub(r'\bconfuesed\b', "confused", para, flags=re.I)
+        para = re.sub(r'\bwined\b', "whined", para, flags=re.I)
+        para = re.sub(r'\bsomthing\b', "something", para, flags=re.I)
+        para = re.sub(r'\bturnd\b', "turned", para, flags=re.I)
+        para = re.sub(r'\bcandel\b', "candle", para, flags=re.I)
+        para = re.sub(r'\btyp\b', "type", para, flags=re.I)
+        para = re.sub(r'\bmost\b(?=\s+have)', "must", para, flags=re.I)
+        para = re.sub(r'\bnow\b(?=\s+much)', "know", para, flags=re.I)
+        para = re.sub(r'\bwhere\b(?=\s+eating)', "were", para, flags=re.I)
+        para = re.sub(r'\bwhere\b(?=\s+in)', "were", para, flags=re.I)
+        para = re.sub(r'\bthere\b(?=\s+way)', "their", para, flags=re.I)
+        para = re.sub(r'\bthere\b(?=\s+death)', "their", para, flags=re.I)
+        para = re.sub(r'\btho\b', "though", para, flags=re.I)
+        para = re.sub(r'\bthankfull\b', "thankful", para, flags=re.I)
+        para = re.sub(r'\bworry\b', "worry", para, flags=re.I)  # noop
+        para = re.sub(r'\bpeacfull\b', "peaceful", para, flags=re.I)
+        para = re.sub(r'\binbetween\b', "in between", para, flags=re.I)
+        para = re.sub(r'\bturkeies\b', "turkeys", para, flags=re.I)
+        para = re.sub(r'\bpheasants\b', "pheasants", para, flags=re.I)
+        para = re.sub(r'\bcrayfish\b', "crayfish", para, flags=re.I)  # actually valid
+        para = re.sub(r'\bmaclanei\b', "Maclanei", para)  # proper name
+        para = re.sub(r'\bancenters\b', "ancestors", para, flags=re.I)
+        para = re.sub(r'\bancester\b', "ancestor", para, flags=re.I)
+        para = re.sub(r'\brote\b', "rote", para, flags=re.I)  # noop
+        para = re.sub(r'\btru\b', "true", para, flags=re.I)
+        para = re.sub(r'\btruely\b', "truly", para, flags=re.I)
+        para = re.sub(r'\bhors\b', "horse", para, flags=re.I)
+        para = re.sub(r'\bexpereance\b', "experience", para, flags=re.I)
+        para = re.sub(r'\bexpereancing\b', "experiencing", para, flags=re.I)
+        
+        # === TEMPUS FUGIT & NAME FIXES ===
+        para = re.sub(r'\bFuget\b', "Fugit", para)
+        para = re.sub(r'\bTenpus\b', "Tempus", para)
+        para = re.sub(r'\bTemus\b', "Tempus", para)
+        para = re.sub(r'\bTemous\b', "Tempus", para)
+        para = re.sub(r'\bTwmpus\b', "Tempus", para)
+        
+        # === CONTEXT-SPECIFIC FIXES ===
+        para = re.sub(r'\bcolonel\b(?=\s+America)', "colonial", para, flags=re.I)
+        para = re.sub(r"\bthat'd\b(?=\s+something)", "that's", para)
+        para = re.sub(r"\bdon't\s+ask\s+my\b", "don't ask me", para, flags=re.I)
+        para = re.sub(r'\bthey\s+where\b', "they were", para, flags=re.I)
+        para = re.sub(r'\bdid\s+not\s+knew\b', "did not know", para, flags=re.I)
+        para = re.sub(r"\bon\s+he's\s+back\b", "on his back", para, flags=re.I)
+        para = re.sub(r'\bplain\b(?=\s+on\b)', "plan", para, flags=re.I)
+        para = re.sub(r'\bImboga\b', "Imbog", para)
+        para = re.sub(r'\bJahrai\b', "Jahari", para)
+        para = re.sub(r'\bSwahil\b', "Swahili", para)
+        para = re.sub(r'\ban\s+yelled\b', "and yelled", para, flags=re.I)
+        para = re.sub(r'\bhe\s+jump\s+his\s+feet\b', "he jumped to his feet", para, flags=re.I)
+        para = re.sub(r"\bIt'll\s+peak\b", "It'll peck", para)
+        para = re.sub(r"\bit's\s+get\s+talon\b", "it's got talons", para, flags=re.I)
+        
+        # === MORE CONTEXT FIXES ===
+        para = re.sub(r"\bdon't\s+now\b", "don't know", para, flags=re.I)
+        para = re.sub(r'\ban\s+children\b', "and children", para, flags=re.I)
+        para = re.sub(r'\bcald\b', "called", para, flags=re.I)
+        para = re.sub(r'\bis this were\b', "is this where", para, flags=re.I)
+        para = re.sub(r'\bis cheek\b', "his cheek", para, flags=re.I)
+        para = re.sub(r'\bstare\s+to\s+long\b', "stare too long", para, flags=re.I)
+        para = re.sub(r'\bwho you where\b', "who you were", para, flags=re.I)
+        para = re.sub(r'\bon there adventure\b', "on their adventure", para, flags=re.I)
+        para = re.sub(r'\bthe got on\b', "they got on", para, flags=re.I)
+        para = re.sub(r'\bto\s+very\b', "to worry", para, flags=re.I)
+        para = re.sub(r"\bin he's tree\b", "in his tree", para, flags=re.I)
+        para = re.sub(r'\bmonth\s+years\b', "months, years", para, flags=re.I)
+        para = re.sub(r'\bmore to life then\b', "more to life than", para, flags=re.I)
+        para = re.sub(r'\bnot all where was\b', "not all there was", para, flags=re.I)
+        para = re.sub(r'\broots and bus\b', "roots and bugs", para, flags=re.I)
+        para = re.sub(r'\bwhat lays ahead\b', "what lies ahead", para, flags=re.I)
+        
+        # === COMPREHENSIVE MISSPELLINGS ===
+        misspellings = [
+            (r'\badtenture\b', "adventure"),
+            (r'\bangery\b', "angry"),
+            (r'\banying\b', "anything"),
+            (r'\bantwhere\b', "anywhere"),
+            (r'\bascertian\b', "ascertain"),
+            (r'\bautomaticlly\b', "automatically"),
+            (r'\bboehemoth\b', "behemoth"),
+            (r"\bboehemoth's\b", "behemoth's"),
+            (r'\bboredome\b', "boredom"),
+            (r'\bbuilit\b', "built"),
+            (r'\bcalmdown\b', "calm down"),
+            (r'\bclif\b', "cliff"),
+            (r'\bcolect\b', "collect"),
+            (r'\bcolecting\b', "collecting"),
+            (r'\bdefouse\b', "defuse"),
+            (r'\bdidnt\b', "didn't"),
+            (r'\bdident\b', "didn't"),
+            (r'\bdisapear\b', "disappear"),
+            (r'\bdissapeard\b', "disappeared"),
+            (r'\beatin\b', "eating"),
+            (r'\bexplaned\b', "explained"),
+            (r'\bexpereance\b', "experience"),
+            (r'\bexpereanced\b', "experienced"),
+            (r'\bexsperessed\b', "expressed"),
+            (r'\bexperessing\b', "expressing"),
+            (r'\bfailer\b', "failure"),
+            (r'\bfailers\b', "failures"),
+            (r'\bfells\b', "feels"),
+            (r'\bfinaly\b', "finally"),
+            (r'\bfloow\b', "flew"),
+            (r'\bformilier\b', "familiar"),
+            (r'\bgereation\b', "generation"),
+            (r'\bimportemt\b', "important"),
+            (r'\bjourny\b', "journey"),
+            (r'\bloader\b', "louder"),
+            (r'\bmear\b', "mere"),
+            (r'\bmermer\b', "murmur"),
+            (r'\bmermered\b', "murmured"),
+            (r'\bmudy\b', "muddy"),
+            (r'\bnowere\b', "nowhere"),
+            (r'\bnomatic\b', "nomadic"),
+            (r'\bperserverance\b', "perseverance"),
+            (r'\bpoped\b', "popped"),
+            (r'\bpredater\b', "predator"),
+            (r'\bquinzhees\b', "quinzees"),
+            (r'\breflectimg\b', "reflecting"),
+            (r'\brosted\b', "roasted"),
+            (r'\brythums\b', "rhythms"),
+            (r'\bsarcasticly\b', "sarcastically"),
+            (r'\bscereied\b', "scurried"),
+            (r'\bscreemed\b', "screamed"),
+            (r'\bsevanna\b', "savanna"),
+            (r'\bsiad\b', "said"),
+            (r'\bsill\b', "still"),
+            (r'\bsquiets\b', "squires"),
+            (r'\bstarteled\b', "startled"),
+            (r'\bsuld\b', "should"),
+            (r'\bteealing\b', "telling"),
+            (r'\bthet\b', "that"),
+            (r'\bthoght\b', "thought"),
+            (r'\btruged\b', "trudged"),
+            (r'\bunsureness\b', "uncertainty"),
+            (r'\busless\b', "useless"),
+            (r'\bvally\b', "valley"),
+            (r'\bvilagers\b', "villagers"),
+            (r'\bweired\b', "weird"),
+            (r'\bwisked\b', "whisked"),
+            (r'\bworm\b', "warm"),
+            (r'\balwas\b', "always"),
+            (r'\bawail\b', "a while"),
+            (r'\bawyay\b', "away"),
+            (r'\bcarful\b', "careful"),
+            (r'\bconfadent\b', "confident"),
+            (r'\bcroched\b', "crouched"),
+            (r'\bdistences\b', "distances"),
+            (r'\belephents\b', "elephants"),
+            (r'\bgotting\b', "getting"),
+            (r'\bgreatfull\b', "grateful"),
+            (r'\bhasent\b', "hasn't"),
+            (r'\bhed\b', "head"),
+            (r'\bhopefull\b', "hopeful"),
+            (r'\bhuntting\b', "hunting"),
+            (r'\bjunped\b', "jumped"),
+            (r'\bmaby\b', "maybe"),
+            (r'\bmamoth\b', "mammoth"),
+            (r"\bmamoth's\b", "mammoth's"),
+            (r'\bNerver\b', "Never"),
+            (r'\bpnderus\b', "ponderous"),
+            (r'\bprobobly\b', "probably"),
+            (r'\bpritty\b', "pretty"),
+            (r'\brealy\b', "really"),
+            (r'\breenacter\b', "reenactor"),
+            (r'\bsomwhere\b', "somewhere"),
+            (r'\bsurpreize\b', "surprise"),
+            (r'\bswollowed\b', "swallowed"),
+            (r'\bteady\b', "teddy"),
+            (r'\bthses\b', "these"),
+            (r'\bthouse\b', "those"),
+            (r'\bthier\b', "their"),
+            (r'\btruble\b', "trouble"),
+            (r'\bwaht\b', "what"),
+            (r"\bwe'er\b", "we're"),
+            (r'\bwhrough\b', "through"),
+            (r'\bwizzing\b', "whizzing"),
+            (r'\bwoah\b', "whoa"),
+            (r'\bwoh\b', "whoa"),
+            (r'\bwerry\b', "very"),
+            (r'\blearder\b', "leader"),
+            (r'\bkeepted\b', "kept"),
+            (r'\bhesenently\b', "hesitantly"),
+            (r'\bsingal\b', "single"),
+            (r'\bsucluded\b', "secluded"),
+            (r'\bselfe\b', "self"),
+            (r'\breleafe\b', "relief"),
+            (r'\bincase\b', "in case"),
+            (r'\bancesters\b', "ancestors"),
+            (r'\baniticepation\b', "anticipation"),
+            (r'\bcommming\b', "coming"),
+            (r'\bconfussed\b', "confused"),
+            (r'\bdisided\b', "decided"),
+            (r'\bdroped\b', "dropped"),
+            (r'\beache\b', "each"),
+            (r'\beratatedly\b', "irritatedly"),
+            (r'\bexplane\b', "explain"),
+            (r'\bexpireancing\b', "experiencing"),
+            (r'\bfernished\b', "furnished"),
+            (r'\bflaged\b', "flagged"),
+            (r'\bothere\b', "other"),
+            (r'\breasure\b', "reassure"),
+            (r'\bsquiers\b', "squires"),
+            (r'\btealing\b', "telling"),
+            (r'\btowords\b', "towards"),
+            (r'\btruned\b', "turned"),
+            (r'\bweast\b', "waste"),
+            (r'\bweried\b', "weird"),
+            (r'\bcarfully\b', "carefully"),
+            (r'\btowrads\b', "towards"),
+            (r'\bafew\b', "a few"),
+            (r'\batila\b', "Attila"),
+        ]
+        
+        for pattern, replacement in misspellings:
+            para = re.sub(pattern, replacement, para, flags=re.I)
+        
+        # Context-specific fixes
+        para = re.sub(r'\bscared\b(?=\s+(?:to|of|the|to\s+the)\s+(?:Kumbarra|people|village|place|land|earth|ground|soil|tree|forest|mountain|river|lake|water|fire|sky|sun|moon|star|spirit|god|goddess|deity|ancestor|tribe|clan|family|home|house|hut|temple|shrine|church|mosque|altar|sacred|holy|divine|celestial|heavenly|supernatural|mystical|magical|enchanted|bewitched|cursed|blessed|protected|guarded|defended))', "sacred", para, flags=re.I)
+        para = re.sub(r'\bavail\b(?=\s+(?:to|for|in|of|at|on|upon|from|with|without))', "available", para, flags=re.I)
+        
+        # Possessives
+        para = re.sub(r'\bCarls\b(?!\')', "Carl's", para)
+        para = re.sub(r'\bGeralds\b(?!\')', "Gerald's", para)
+        para = re.sub(r'\bTempus\s+Fugets\b', "Tempus Fugit's", para, flags=re.I)
+        para = re.sub(r'\bOswalds\b(?!\')', "Oswald's", para)
+        para = re.sub(r'\bJaharis\b(?!\')', "Jahari's", para)
+        
+        # === SENTENCE & DIALOGUE FIXES ===
+        # These fix common NEO 2 sentence-punctuation problems.
+        
+        # 1. Lowercase "Said Carl" / "Asked Carl" mid-sentence
+        para = re.sub(r'([.!?]\s+)Said\s+', r'\1said ', para)
+        para = re.sub(r'([.!?]\s+)Asked\s+', r'\1asked ', para)
+        para = re.sub(r'([.!?]\s+)Replied\s+', r'\1replied ', para)
+        
+        # 2. Add comma before opening quote after dialogue tag
+        para = re.sub(r'\b(said|asked|replied|answered|retorted|exclaimed|shouted|whispered|muttered|stammered|remarked|stated|wondered|explained|warned|implored|queried|vocalised|murmured|caterwauled|lectured|called out)\s+"', r'\1, "', para)
+        
+        # 3. Add period after Name + tag when followed by a capital letter (not a quote)
+        # Note: "Tempus Fugit" is treated as a single name; don't split it
+        para = re.sub(r'(Carl|Gerald|Jahari|Oswald|Fur-Klad)\s+(said|asked|replied|answered|retorted|exclaimed|shouted|whispered|muttered|stammered|remarked|stated|wondered|explained|warned|implored|queried|vocalised|murmured|caterwauled|lectured|called out)\s+([A-Z][a-z]+)(?!"|\'|\s*[,])', r'\1 \2. \3', para)
+        para = re.sub(r'(Tempus Fugit)\s+(said|asked|replied|answered|retorted|exclaimed|shouted|whispered|muttered|stammered|remarked|stated|wondered|explained|warned|implored|queried|vocalised|murmured|caterwauled|lectured|called out)\s+([A-Z][a-z]+)(?!"|\'|\s*[,])', r'\1 \2. \3', para)
+        
+        # 4. Add period after tag+name when followed by capital (only if no quote after name)
+        para = re.sub(r'([a-z.,!?"])\s+(said|asked|replied|answered|retorted|exclaimed|shouted|whispered|muttered|stammered|remarked|stated|wondered|explained|warned|implored|queried|vocalised|murmured|caterwauled|lectured|called out)\s+(Carl|Gerald|Jahari|Oswald|Fur-Klad)\s+([A-Z])', r'\1 \2 \3. \4', para)
+        para = re.sub(r'([a-z.,!?"])\s+(said|asked|replied|answered|retorted|exclaimed|shouted|whispered|muttered|stammered|remarked|stated|wondered|explained|warned|implored|queried|vocalised|murmured|caterwauled|lectured|called out)\s+(Tempus Fugit)\s+([A-Z])', r'\1 \2 \3. \4', para)
+        
+        # 5. Wrap standalone questions/exclamations in quotes
+        para = re.sub(r'^(Wait|Why|What|How|Where|When|Who|Which|I said|I am|I\'ll|By the|Fantastic|Hold on|No time|But it|Was violence|With a|Carl peeled|We made|Ok so|Hmm|Seriously|Very confused|Do I look|Yes|GO|Carl refused|Over there|Great|Wow|That doesn\'t|Suddenly|That looks|The man|What do you|Wait-who|Carl demanded|Not so fun|Then puff|There was|It opened|It feels|You know|Some come|Are we|Careful|I didn\'t|Then it|Let\'s keep|So those|Now what|I don\'t|I guess|They do|They kept|They spotted|They pressed|They walked|They tried|They came|They heard|They saw|They ate|They finished|They got|They were|He tried|He was|He had|He saw|He got|He spotted|He exclaimed|He jumped|He did|He thought|He looked|He went|He came|She went|She had|She was|She looked|She saw|She came|She tried|We need|We were|We had|We got|We can|We will|We walked|We spotted|We pressed|We kept|We came|We heard|We saw|We ate|We finished|We got|We were|You should|You don\'t|You know|You find|You refuse|You\'ve never|You think|You\'re late|You\'re right|You\'re at|You\'re just|Get to|Get away|Come with|Come sit|Come see|Look you\'re|Look at|Look around|Look you|See there|See we|See you|See there\'s|See it|See the|See we|See I|Here he|Here it|Here they|Here we|Here you|Here is|Here are|Here was|Here were|Here comes|Here goes|Here it|Here they|Here we|Here you|Here I|Here she|Here he)([^"?!.]*[?!])$', r'"\1\2"', para, flags=re.M)
+        
+        # 6. Targeted fixes for specific bare-dialogue lines
+        # These match lines that end with a dialogue tag but have no opening quote
+        para = re.sub(r'^(By the king\'s beard[^"]*?),\s+said', r'"\1," said', para, flags=re.M)
+        para = re.sub(r'^(I said it[^"]*?),\s+Tempus', r'"\1," Tempus', para, flags=re.M)
+        para = re.sub(r'^(Fantastic[^"]*?)\?\s+Said', r'"\1?" said', para, flags=re.M)
+        para = re.sub(r'^(No time[^"]*?),\s+Tempus', r'"\1," Tempus', para, flags=re.M)
+        para = re.sub(r'^(But it don\'t work[^"]*?)\s+said', r'"\1," said', para, flags=re.M)
+        para = re.sub(r'^(We made it[^"]*?)\s+said', r'"\1," said', para, flags=re.M)
+        para = re.sub(r'^(Ok so[^"]*?)\s+Tempus', r'"\1," Tempus', para, flags=re.M)
+        
+        # 7. Wrap dialogue that ends with ? and is followed by a tag (mid-paragraph)
+        # e.g., "What do you mean?" Carl asked. -> adds missing opening quote
+        para = re.sub(r'([.!?] )([A-Z][^"]*\?)"\s+(Carl|Gerald|Tempus|Jahari|Oswald|Fur-Klad)\s+(asked|said|replied)', r'\1"\2" \3 \4.', para)
+        
+        # 8. Fix "Name, the man replied" after a question -> wrap Name in quotes
+        para = re.sub(r'"Wait-who are you\?"\s+([A-Z][a-z]+\s+[A-Z][a-z]+),\s+the man replied', r'"Wait-who are you?" "\1," the man replied.', para)
+        
+        # 9. Wrap obvious short dialogue (<80 chars) ending in ? or ! with no quotes
+        para = re.sub(r'^([A-Z][^"]{5,60}[?!])\s+(Carl|Gerald|Tempus|Jahari|Oswald|Fur-Klad)\s+(asked|said|replied|answered|retorted|exclaimed|shouted|whispered|muttered|stammered|remarked|stated|wondered|explained|warned|implored|queried|vocalised|murmured|caterwauled|lectured|called out)([.\s])', r'"\1" \2 \3.', para, flags=re.M)
+        
+        # === CAPITALIZATION FIXES ===
+        # Capitalize after ? or ! when followed by a name or sentence starter,
+        # but NOT when it's a dialogue tag.
+        dialogue_tags_lc = ['said', 'asked', 'replied', 'answered', 'retorted', 'exclaimed',
+                            'shouted', 'whispered', 'muttered', 'stammered', 'remarked', 'stated',
+                            'wondered', 'explained', 'warned', 'implored', 'queried', 'vocalised',
+                            'murmured', 'caterwauled', 'lectured', 'called', 'jumped', 'expressed',
+                            'gestured', 'pointed', 'scanned', 'spotted', 'studied', 'led', 'brought',
+                            'handed', 'finished', 'snatched', 'picked', 'crowed', 'pronounced',
+                            'leapt', 'emerged', 'followed', 'beckoned', 'ordered', 'furnished',
+                            'shrugged', 'inquired', 'proposed', 'thought', 'looked', 'went', 'came',
+                            'tried', 'had', 'saw', 'got', 'spotted', 'did', 'knew', 'was', 'were',
+                            'kept', 'walked', 'pressed', 'spotted', 'came', 'heard', 'saw', 'ate',
+                            'finished', 'got', 'need', 'can', 'will', 'should', 'don', 'know',
+                            'find', 'refuse', 'think', 'went', 'had', 'looked', 'said', 'asked']
+        
+        def capitalize_after_punctuation(match):
+            punct = match.group(1)
+            space = match.group(2)
+            word = match.group(3)
+            rest = match.group(4) if match.group(4) else ''
+            if word.lower() in dialogue_tags_lc:
+                return punct + space + word.lower() + rest
+            return punct + space + word.capitalize() + rest
+        
+        para = re.sub(r'([?!])(\s+)([a-zA-Z]+)(\S*)', capitalize_after_punctuation, para)
+        
+        # Fix specific wrong verb forms after ?
+        para = re.sub(r'\?\s+Ask\s+', r'? asked ', para)
+        para = re.sub(r'\?\s+Say\s+', r'? said ', para)
+        para = re.sub(r'\?\s+Reply\s+', r'? replied ', para)
+        para = re.sub(r'\?\s+Answer\s+', r'? answered ', para)
+        para = re.sub(r'!\s+Ask\s+', r'! asked ', para)
+        para = re.sub(r'!\s+Say\s+', r'! said ', para)
+        
+        # === BASIC PUNCTUATION FIXES ===
+        para = re.sub(r'\s+([.,;:!?])', r'\1', para)  # remove space before punctuation
+        para = re.sub(r'\.([A-Z])', r'. \1', para)   # ensure space after period
+        para = re.sub(r'\?([A-Z])', r'? \1', para)
+        para = re.sub(r'!([A-Z])', r'! \1', para)
+        para = re.sub(r'\s+', ' ', para)             # collapse multiple spaces
+        para = para.strip()
+        
+        fixed_paras.append(para)
+    
+    return '\n'.join(fixed_paras)
+
+if __name__ == "__main__":
+    if len(sys.argv) > 1:
+        with open(sys.argv[1], "r", encoding="utf-8") as f:
+            text = f.read()
+    else:
+        text = sys.stdin.read()
+    print(fix_text(text))

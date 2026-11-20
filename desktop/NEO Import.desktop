@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=Import from NEO 2
+Comment=Transfer files from AlphaSmart NEO 2 to LibreOffice Writer
+Exec=/home/maryo23/.local/bin/neo-to-libreoffice
+Type=Application
+Terminal=false
+Icon=document-send
+Categories=Office;
+StartupNotify=true
