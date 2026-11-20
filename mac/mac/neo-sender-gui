@@ -1,0 +1,501 @@
+#!/usr/bin/env python3
+"""
+NEO Sender - GUI application to send files to AlphaSmart NEO 2
+"""
+
+import tkinter as tk
+from tkinter import ttk, filedialog, messagebox, scrolledtext
+import subprocess
+import shutil
+import os
+import sys
+
+# --- macOS .app bundle support (PyInstaller) -----------------------------
+# When frozen, helper tools (neotools-cli, neo-format-neo2, pandoc) live
+# next to the app executable in Contents/MacOS.
+FROZEN = getattr(sys, "frozen", False)
+BUNDLE_BIN = os.path.dirname(sys.executable) if FROZEN else ""
+if FROZEN and os.path.exists(os.path.join(BUNDLE_BIN, "pandoc")):
+    os.environ["NEO_PANDOC"] = os.path.join(BUNDLE_BIN, "pandoc")
+
+class NEOSenderApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("NEO Sender - AlphaSmart NEO 2 File Manager")
+        self.root.geometry("700x600")
+        self.root.minsize(600, 500)
+        
+        # Style
+        self.style = ttk.Style()
+        self.style.configure("TButton", padding=6, relief="flat", background="#4CAF50")
+        self.style.configure("Title.TLabel", font=("Helvetica", 18, "bold"))
+        self.style.configure("Subtitle.TLabel", font=("Helvetica", 10))
+        
+        # Main container
+        main_frame = ttk.Frame(root, padding="20")
+        main_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+        
+        # Configure grid weights
+        root.columnconfigure(0, weight=1)
+        root.rowconfigure(0, weight=1)
+        main_frame.columnconfigure(0, weight=1)
+        main_frame.rowconfigure(3, weight=1)
+        
+        # Title
+        ttk.Label(main_frame, text="NEO Sender", style="Title.TLabel").grid(row=0, column=0, pady=(0, 5))
+        ttk.Label(main_frame, text="Send files to your AlphaSmart NEO 2", style="Subtitle.TLabel").grid(row=1, column=0, pady=(0, 20))
+        
+        # Status bar
+        self.status_var = tk.StringVar(value="Checking NEO connection...")
+        status_frame = ttk.Frame(main_frame)
+        status_frame.grid(row=2, column=0, sticky=(tk.W, tk.E), pady=(0, 10))
+        status_frame.columnconfigure(0, weight=1)
+        
+        self.status_label = ttk.Label(status_frame, textvariable=self.status_var, font=("Helvetica", 10))
+        self.status_label.grid(row=0, column=0, sticky=tk.W)
+        
+        self.refresh_btn = ttk.Button(status_frame, text="Refresh", command=self.check_neo, width=10)
+        self.refresh_btn.grid(row=0, column=1, padx=(10, 0))
+        
+        # Notebook for tabs
+        self.notebook = ttk.Notebook(main_frame)
+        self.notebook.grid(row=3, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(0, 10))
+        
+        # Send tab
+        send_frame = ttk.Frame(self.notebook, padding="10")
+        self.notebook.add(send_frame, text="Send to NEO")
+        send_frame.columnconfigure(0, weight=1)
+        send_frame.rowconfigure(2, weight=1)
+        
+        # File selection
+        file_frame = ttk.Frame(send_frame)
+        file_frame.grid(row=0, column=0, sticky=(tk.W, tk.E), pady=(0, 10))
+        file_frame.columnconfigure(1, weight=1)
+        
+        ttk.Label(file_frame, text="File:").grid(row=0, column=0, padx=(0, 5))
+        self.file_path = tk.StringVar()
+        self.file_entry = ttk.Entry(file_frame, textvariable=self.file_path)
+        self.file_entry.grid(row=0, column=1, sticky=(tk.W, tk.E))
+        ttk.Button(file_frame, text="Browse...", command=self.browse_file).grid(row=0, column=2, padx=(5, 0))
+        
+        # Slot selection
+        slot_frame = ttk.Frame(send_frame)
+        slot_frame.grid(row=1, column=0, sticky=(tk.W, tk.E), pady=(0, 10))
+        
+        ttk.Label(slot_frame, text="NEO Slot:").grid(row=0, column=0, padx=(0, 5))
+        self.slot_var = tk.StringVar(value="1")
+        slot_combo = ttk.Combobox(slot_frame, textvariable=self.slot_var, values=["1", "2", "3", "4", "5", "6", "7", "8"], width=5, state="readonly")
+        slot_combo.grid(row=0, column=1, padx=(0, 10))
+        
+        ttk.Label(slot_frame, text="or Name:").grid(row=0, column=2, padx=(0, 5))
+        self.name_var = tk.StringVar()
+        ttk.Entry(slot_frame, textvariable=self.name_var, width=20).grid(row=0, column=3, padx=(0, 10))
+        
+        ttk.Label(slot_frame, text="Format:").grid(row=0, column=4, padx=(0, 5))
+        self.format_var = tk.StringVar(value="markdown")
+        format_combo = ttk.Combobox(slot_frame, textvariable=self.format_var, values=["markdown", "ascii", "minimal"], width=10, state="readonly")
+        format_combo.grid(row=0, column=5)
+        
+        # Format tooltip
+        ttk.Label(slot_frame, text="(markdown: **bold**, *italic*; ascii: __bold__, _italic_; minimal: plain text)", font=("Helvetica", 8)).grid(row=1, column=0, columnspan=6, sticky=tk.W, pady=(2, 0))
+        
+        # Formatting warning
+        self.warn_var = tk.StringVar()
+        self.warn_label = ttk.Label(send_frame, textvariable=self.warn_var, font=("Helvetica", 8, "italic"), foreground="orange")
+        self.warn_label.grid(row=2, column=0, sticky=tk.W, pady=(0, 2))
+        
+        # Preview
+        ttk.Label(send_frame, text="Preview:").grid(row=3, column=0, sticky=tk.W, pady=(0, 5))
+        self.preview_text = scrolledtext.ScrolledText(send_frame, wrap=tk.WORD, width=50, height=10)
+        self.preview_text.grid(row=4, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+        self.preview_text.config(state=tk.DISABLED)
+        
+        # Send button frame
+        send_btn_frame = ttk.Frame(send_frame)
+        send_btn_frame.grid(row=5, column=0, pady=(10, 0), sticky=(tk.W, tk.E))
+        send_btn_frame.columnconfigure(0, weight=1)
+        
+        # Connection hint
+        self.hint_var = tk.StringVar(value="Connect your NEO with USB to enable sending")
+        self.hint_label = ttk.Label(send_btn_frame, textvariable=self.hint_var, font=("Helvetica", 9, "italic"), foreground="red")
+        self.hint_label.grid(row=0, column=0, sticky=tk.W)
+        
+        # Send button (always visible, disabled state is clear)
+        self.send_btn = ttk.Button(send_btn_frame, text="Send to NEO", command=self.send_file, state=tk.DISABLED)
+        self.send_btn.grid(row=0, column=1, sticky=tk.E, padx=(10, 0))
+        
+        # Files tab
+        files_frame = ttk.Frame(self.notebook, padding="10")
+        self.notebook.add(files_frame, text="NEO Files")
+        files_frame.columnconfigure(0, weight=1)
+        files_frame.rowconfigure(0, weight=1)
+        
+        # Files list
+        ttk.Label(files_frame, text="Files on NEO:").grid(row=0, column=0, sticky=tk.W, pady=(0, 5))
+        
+        list_frame = ttk.Frame(files_frame)
+        list_frame.grid(row=1, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+        list_frame.columnconfigure(0, weight=1)
+        list_frame.rowconfigure(0, weight=1)
+        
+        self.files_listbox = tk.Listbox(list_frame, height=10)
+        self.files_listbox.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+        
+        scrollbar = ttk.Scrollbar(list_frame, orient=tk.VERTICAL, command=self.files_listbox.yview)
+        scrollbar.grid(row=0, column=1, sticky=(tk.N, tk.S))
+        self.files_listbox.config(yscrollcommand=scrollbar.set)
+        
+        files_btn_frame = ttk.Frame(files_frame)
+        files_btn_frame.grid(row=2, column=0, pady=(10, 0))
+        
+        ttk.Button(files_btn_frame, text="Refresh List", command=self.list_neo_files).grid(row=0, column=0, padx=(0, 5))
+        ttk.Button(files_btn_frame, text="Read Selected", command=self.read_selected).grid(row=0, column=1, padx=(0, 5))
+        ttk.Button(files_btn_frame, text="Clear All", command=self.clear_all_files).grid(row=0, column=2)
+        
+        # Log tab
+        log_frame = ttk.Frame(self.notebook, padding="10")
+        self.notebook.add(log_frame, text="Log")
+        log_frame.columnconfigure(0, weight=1)
+        log_frame.rowconfigure(0, weight=1)
+        
+        self.log_text = scrolledtext.ScrolledText(log_frame, wrap=tk.WORD, width=50, height=15)
+        self.log_text.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+        self.log_text.config(state=tk.DISABLED)
+        
+        # Bottom buttons
+        bottom_frame = ttk.Frame(main_frame)
+        bottom_frame.grid(row=4, column=0, sticky=(tk.W, tk.E), pady=(10, 0))
+        
+        ttk.Button(bottom_frame, text="Open Fix My Doc", command=self.open_fix_my_doc).grid(row=0, column=0, padx=(0, 5))
+        ttk.Button(bottom_frame, text="Quit", command=root.quit).grid(row=0, column=1)
+        
+        # Initial check
+        self.check_neo()
+        
+    def log(self, message):
+        self.log_text.config(state=tk.NORMAL)
+        self.log_text.insert(tk.END, message + "\n")
+        self.log_text.see(tk.END)
+        self.log_text.config(state=tk.DISABLED)
+        
+    def run_neotools(self, args):
+        """Run neotools command and return output"""
+        try:
+            neotools_path = None
+            if FROZEN:
+                bundled = os.path.join(BUNDLE_BIN, "neotools-cli")
+                if os.path.exists(bundled):
+                    neotools_path = bundled
+            # Find neotools wherever it was installed (pip --user, pipx, venv, or system)
+            if not neotools_path:
+                neotools_path = shutil.which("neotools")
+            if not neotools_path:
+                for candidate in ("~/.local/bin/neotools", "~/.local/pipx/venvs/neotools/bin/neotools", "~/.local/neotools-venv/bin/neotools"):
+                    expanded = os.path.expanduser(candidate)
+                    if os.path.exists(expanded):
+                        neotools_path = expanded
+                        break
+            if not neotools_path:
+                return "", "neotools not found. Install it with: pip3 install --user neotools", 1
+            cmd = [neotools_path] + args
+            result = subprocess.run(cmd, capture_output=True, text=True, shell=False)
+            return result.stdout, result.stderr, result.returncode
+        except Exception as e:
+            return "", str(e), 1
+            
+    def check_neo(self):
+        """Check if NEO is connected"""
+        self.status_var.set("Checking NEO connection...")
+        self.root.update()
+        
+        stdout, stderr, rc = self.run_neotools(["info"])
+        
+        if rc == 0 and stdout:
+            self.status_var.set("NEO connected ✓")
+            self.status_label.config(foreground="green")
+            self.send_btn.config(state=tk.NORMAL, text="Send to NEO")
+            self.hint_var.set("Ready to send! Select a file and click Send to NEO")
+            self.hint_label.config(foreground="green")
+            self.log("NEO connected")
+            self.log(stdout)
+            self.list_neo_files()
+        else:
+            self.status_var.set("NEO not connected ✗")
+            self.status_label.config(foreground="red")
+            self.send_btn.config(state=tk.DISABLED, text="Send to NEO (connect NEO)")
+            self.hint_var.set("Connect your NEO with USB to enable sending")
+            self.hint_label.config(foreground="red")
+            self.log("NEO not connected: " + stderr)
+            
+    def browse_file(self):
+        """Open native file browser using zenity"""
+        try:
+            # Use zenity for native GTK file picker (Linux Mint style)
+            result = subprocess.run(
+                ["zenity", "--file-selection",
+                 "--title=Select file to send to NEO",
+                 "--filename=" + os.path.expanduser("~/Documents/"),
+                 "--file-filter=All Documents | *.txt *.doc *.docx *.odt *.rtf *.html *.htm *.md *.epub *.pdf",
+                 "--file-filter=Word Documents | *.doc *.docx",
+                 "--file-filter=OpenDocument | *.odt",
+                 "--file-filter=Text files | *.txt",
+                 "--file-filter=Web / Markdown | *.html *.htm *.md",
+                 "--file-filter=All files | *"],
+                capture_output=True, text=True
+            )
+            if result.returncode == 0:
+                file_path = result.stdout.strip()
+                if file_path:
+                    self.file_path.set(file_path)
+                    self.preview_file(file_path)
+        except Exception:
+            # Fallback to tkinter if zenity fails
+            file_path = filedialog.askopenfilename(
+                title="Select file to send to NEO",
+                filetypes=[
+                    ("All Documents", "*.txt *.doc *.docx *.odt *.rtf *.html *.htm *.md"),
+                    ("Word Documents", "*.doc *.docx"),
+                    ("OpenDocument", "*.odt"),
+                    ("Text files", "*.txt"),
+                    ("Web / Markdown", "*.html *.htm *.md"),
+                    ("All files", "*.*")
+                ],
+                initialdir=os.path.expanduser("~/Documents")
+            )
+            if file_path:
+                self.file_path.set(file_path)
+                self.preview_file(file_path)
+            
+    def needs_conversion(self, file_path):
+        """Check if file needs LibreOffice conversion"""
+        ext = os.path.splitext(file_path)[1].lower()
+        return ext in ['.odt', '.doc', '.docx', '.rtf', '.html', '.htm', '.epub', '.pdf']
+
+    def convert_to_txt(self, file_path, tmp_dir):
+        """Convert document to plain text preserving structure as best as possible"""
+        os.makedirs(tmp_dir, exist_ok=True)
+        base_name = os.path.splitext(os.path.basename(file_path))[0]
+        txt_file = os.path.join(tmp_dir, base_name + ".txt")
+
+        # Try pandoc first (best for preserving structure)
+        try:
+            result = subprocess.run(
+                [os.environ.get("NEO_PANDOC", "pandoc"), file_path, "-t", "plain", "-o", txt_file],
+                capture_output=True, text=True, timeout=30
+            )
+            if result.returncode == 0 and os.path.exists(txt_file):
+                self.log("Converted using pandoc (structure preserved)")
+                return txt_file
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            pass
+
+        # Fallback to LibreOffice
+        result = subprocess.run([
+            "libreoffice", "--headless", "--convert-to",
+            "txt:Text (encoded):UTF8", file_path, "--outdir", tmp_dir
+        ], capture_output=True, text=True, timeout=60)
+
+        if result.returncode == 0:
+            if os.path.exists(txt_file):
+                self.log("Converted using LibreOffice")
+                return txt_file
+        return None
+
+    def preview_file(self, file_path):
+        """Show preview of file content"""
+        self.preview_text.config(state=tk.NORMAL)
+        self.preview_text.delete(1.0, tk.END)
+
+        # Show/hide formatting warning
+        if self.needs_conversion(file_path):
+            self.warn_var.set("⚠ NEO 2 only supports plain text. Fonts, colors, bold, etc. will be removed.")
+        else:
+            self.warn_var.set("")
+
+        try:
+            if self.needs_conversion(file_path):
+                ext = os.path.splitext(file_path)[1].lower()
+                self.preview_text.insert(tk.END, f"[{ext.upper()} file - will be converted to text before sending]\n\n")
+                # Try to read converted text
+                tmp_dir = "/tmp/neo_preview"
+                txt_file = self.convert_to_txt(file_path, tmp_dir)
+                if txt_file:
+                    try:
+                        with open(txt_file, 'r', encoding='utf-8') as f:
+                            content = f.read(1000)
+                    except UnicodeDecodeError:
+                        with open(txt_file, 'r', encoding='latin-1', errors='replace') as f:
+                            content = f.read(1000)
+                    self.preview_text.insert(tk.END, content)
+                    if len(content) >= 1000:
+                        self.preview_text.insert(tk.END, "\n... [truncated]")
+                else:
+                    self.preview_text.insert(tk.END, "Could not preview file")
+            else:
+                try:
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        content = f.read(1000)
+                except UnicodeDecodeError:
+                    # Try with latin-1 fallback
+                    with open(file_path, 'r', encoding='latin-1') as f:
+                        content = f.read(1000)
+                self.preview_text.insert(tk.END, content)
+                if len(content) >= 1000:
+                    self.preview_text.insert(tk.END, "\n... [truncated]")
+        except Exception as e:
+            self.preview_text.insert(tk.END, f"Error reading file: {e}")
+
+        self.preview_text.config(state=tk.DISABLED)
+        
+    def send_file(self):
+        """Send file to NEO"""
+        file_path = self.file_path.get().strip().strip('"').strip("'")
+        file_path = os.path.expanduser(file_path)
+        if not file_path:
+            messagebox.showerror("Error", "Please select a file first")
+            return
+
+        if not os.path.exists(file_path):
+            messagebox.showerror("Error", f"File not found:\n{file_path}")
+            return
+            
+        # Determine slot
+        slot = self.slot_var.get()
+        name = self.name_var.get()
+        target = name if name else slot
+        
+        # Convert if needed
+        actual_file = file_path
+        if self.needs_conversion(file_path):
+            self.log(f"Converting {os.path.basename(file_path)} to text...")
+            tmp_dir = "/tmp/neo_send"
+            converted = self.convert_to_txt(file_path, tmp_dir)
+
+            if converted:
+                actual_file = converted
+                self.log("Conversion successful")
+            else:
+                messagebox.showerror("Error", "Failed to convert file to text")
+                return
+        
+        # Apply formatting style for NEO 2 (any input format via pandoc)
+        format_style = self.format_var.get()
+        self.log(f"Applying {format_style} formatting...")
+        formatted_file = "/tmp/neo_send_formatted.txt"
+        formatter_path = os.path.expanduser("~/.local/bin/neo-format-neo2")
+
+        if FROZEN and os.path.exists(os.path.join(BUNDLE_BIN, "neo-format-neo2")):
+            fmt_cmd = [os.path.join(BUNDLE_BIN, "neo-format-neo2"), file_path, formatted_file, f"--format-style={format_style}"]
+        else:
+            fmt_cmd = ["python3", formatter_path, file_path, formatted_file, f"--format-style={format_style}"]
+        result = subprocess.run(fmt_cmd, capture_output=True, text=True)
+        if result.returncode == 0 and os.path.exists(formatted_file):
+            actual_file = formatted_file
+            self.log("Formatting applied")
+        else:
+            self.log("Formatting skipped (using converted plain text)")
+                
+        # Send to NEO
+        self.log(f"Sending to NEO slot {target}...")
+        self.send_btn.config(state=tk.DISABLED)
+        self.root.update()
+        
+        stdout, stderr, rc = self.run_neotools(["files", "write", actual_file, target])
+        
+        if rc == 0:
+            messagebox.showinfo("Success", f"File sent successfully!\n\n{os.path.basename(file_path)}\n→ NEO slot: {target}")
+            self.log(f"Success: {os.path.basename(file_path)} -> slot {target}")
+            self.list_neo_files()
+        else:
+            messagebox.showerror("Error", f"Failed to send file:\n{stderr}")
+            self.log(f"Failed: {stderr}")
+            
+        self.send_btn.config(state=tk.NORMAL)
+        
+    def list_neo_files(self):
+        """List files on NEO"""
+        self.files_listbox.delete(0, tk.END)
+        
+        stdout, stderr, rc = self.run_neotools(["files", "list"])
+        
+        if rc == 0:
+            lines = stdout.strip().split('\n')
+            for line in lines:
+                if line.strip():
+                    self.files_listbox.insert(tk.END, line.strip())
+            self.log(f"Listed {len(lines)} files on NEO")
+        else:
+            self.log(f"Failed to list files: {stderr}")
+            
+    def read_selected(self):
+        """Read selected file from NEO"""
+        selection = self.files_listbox.curselection()
+        if not selection:
+            messagebox.showwarning("Warning", "Please select a file to read")
+            return
+            
+        file_name = self.files_listbox.get(selection[0])
+        
+        # Ask where to save using zenity
+        save_path = None
+        try:
+            result = subprocess.run(
+                ["zenity", "--file-selection", "--save",
+                 "--title=Save file from NEO",
+                 "--filename=" + os.path.expanduser("~/Documents/" + file_name),
+                 "--confirm-overwrite"],
+                capture_output=True, text=True
+            )
+            if result.returncode == 0:
+                save_path = result.stdout.strip()
+        except Exception:
+            pass
+        
+        if not save_path:
+            # Fallback to tkinter
+            save_path = filedialog.asksaveasfilename(
+                title="Save file from NEO",
+                defaultextension=".txt",
+                initialfile=file_name,
+                initialdir=os.path.expanduser("~/Documents")
+            )
+        
+        if save_path:
+            self.log(f"Reading {file_name} from NEO...")
+            stdout, stderr, rc = self.run_neotools(["files", "read", file_name, save_path])
+            
+            if rc == 0:
+                messagebox.showinfo("Success", f"File saved to:\n{save_path}")
+                self.log(f"Saved: {save_path}")
+            else:
+                messagebox.showerror("Error", f"Failed to read file:\n{stderr}")
+                self.log(f"Failed: {stderr}")
+                
+    def clear_all_files(self):
+        """Clear all files from NEO"""
+        if not messagebox.askyesno("Confirm", "Are you sure you want to delete ALL files from the NEO?"):
+            return
+            
+        self.log("Clearing all NEO files...")
+        stdout, stderr, rc = self.run_neotools(["files", "clear"])
+        
+        if rc == 0:
+            messagebox.showinfo("Success", "All files cleared from NEO")
+            self.log("All files cleared")
+            self.list_neo_files()
+        else:
+            messagebox.showerror("Error", f"Failed to clear files:\n{stderr}")
+            self.log(f"Failed: {stderr}")
+            
+    def open_fix_my_doc(self):
+        """Launch Fix My Doc"""
+        fix_doc_path = os.path.expanduser("~/.local/bin/fix-my-doc")
+        subprocess.Popen([fix_doc_path], shell=False)
+
+def main():
+    root = tk.Tk()
+    app = NEOSenderApp(root)
+    root.mainloop()
+    
+if __name__ == "__main__":
+    main()
